@@ -1,0 +1,51 @@
+<!doctype html><html><head><meta charset=utf-8>
+<title>Edge Typing - live</title>
+<style>
+ body{background:#0d1117;color:#c9d1d9;font:14px/1.5 -apple-system,Segoe UI,sans-serif;margin:0;padding:24px}
+ h1{font-size:18px;color:#58a6ff;margin:0 0 4px}
+ .sub{color:#8b949e;font-size:12px;margin-bottom:16px}
+ .bar{height:22px;background:#21262d;border-radius:6px;overflow:hidden;margin:10px 0}
+ .fill{height:100%;background:linear-gradient(90deg,#238636,#2ea043);transition:width .5s}
+ .big{font-size:15px;color:#e6edf3}
+ .stats{display:flex;gap:24px;flex-wrap:wrap;margin:14px 0}
+ .stat b{color:#e6edf3;font-size:20px;display:block}
+ .stat span{color:#8b949e;font-size:12px}
+ table{border-collapse:collapse;width:100%;margin-top:14px;font-size:13px}
+ td{padding:3px 10px 3px 0;white-space:nowrap}
+ .state{color:#d29922}.enduring{color:#8b949e}
+ .rel{color:#58a6ff}.pill{color:#7ee787}
+ .chips span{display:inline-block;background:#21262d;border-radius:10px;padding:2px 9px;margin:2px;font-size:12px}
+</style></head><body>
+<h1>Knowledge Graph &mdash; Edge Typing</h1>
+<div class=sub>tiiny Qwen3.6-35B &middot; auto-refreshing every 4s</div>
+<div class=big id=hdr>loading&hellip;</div>
+<div class=bar><div class=fill id=fill style=width:0%></div></div>
+<div class=stats id=stats></div>
+<div class=chips id=rels></div>
+<div class=chips id=temps></div>
+<table id=recent></table>
+<script>
+const TOKEN="__TOKEN__";
+function fmt(s){if(s==null)return"--";const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h+"h "+m+"m"}
+async function tick(){
+ try{
+  const r=await fetch("/api/graph/typing_status?token="+encodeURIComponent(TOKEN));
+  const d=await r.json();
+  document.getElementById("hdr").textContent=d.typed+" / "+d.total+" edges typed ("+d.pct+"%)";
+  document.getElementById("fill").style.width=d.pct+"%";
+  document.getElementById("stats").innerHTML=
+   "<div class=stat><b>"+d.remaining+"</b><span>remaining</span></div>"+
+   "<div class=stat><b>"+d.rate_per_s+"/s</b><span>current rate</span></div>"+
+   "<div class=stat><b>"+fmt(d.eta_seconds)+"</b><span>ETA</span></div>";
+  document.getElementById("rels").innerHTML="<span>relations:</span> "+
+   Object.entries(d.relations).map(([k,v])=>"<span class=rel>"+k+" "+v+"</span>").join("");
+  document.getElementById("temps").innerHTML="<span>temporality:</span> "+
+   Object.entries(d.temporality).map(([k,v])=>"<span class=pill>"+(k||"?")+" "+v+"</span>").join("");
+  document.getElementById("recent").innerHTML="<tr><td colspan=4 style=color:#8b949e>&mdash; last 15 typed &mdash;</td></tr>"+
+   d.recent.map(e=>{const a={forward:"&rarr;",backward:"&larr;",undirected:"&harr;"}[e.direction]||"&mdash;";
+    const asof=e.as_of?(" @"+e.as_of):"";const cls=e.temporality=="state"?"state":"enduring";
+    return "<tr><td>"+e.src+" "+a+" "+e.dst+"</td><td class=rel>"+e.relation+"</td><td class='"+cls+"'>"+e.temporality+asof+"</td><td style=color:#6e7681>w="+e.weight+"</td></tr>"}).join("");
+ }catch(e){document.getElementById("hdr").textContent="(waiting for server…)"}
+}
+tick();setInterval(tick,4000);
+</script></body></html>

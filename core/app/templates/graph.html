@@ -1,0 +1,258 @@
+<!doctype html><html><head><meta charset=utf-8>
+<title>Tailpipe - Knowledge Graph</title>
+<style>
+ html,body{margin:0;height:100%;background:#05070d;overflow:hidden;font:13px/1.4 -apple-system,Segoe UI,sans-serif;color:#c9d1d9}
+ #graph{position:fixed;inset:0}
+ #hud{position:fixed;top:0;left:0;padding:16px 18px;z-index:10;max-width:340px;pointer-events:none}
+ #hud h1{font-size:16px;margin:0 0 2px;color:#e6edf3;letter-spacing:.3px;text-shadow:0 0 12px #1f6feb}
+ #hud .s{color:#8b949e;font-size:11px}
+ #legend{margin-top:14px;pointer-events:auto}
+ #legend .row{display:flex;align-items:center;gap:7px;margin:3px 0;font-size:12px}
+ #legend .dot{width:11px;height:11px;border-radius:50%;box-shadow:0 0 8px currentColor;flex:none}
+ #legend .lbl{outline:none;cursor:text;border-bottom:1px dashed transparent;padding:0 1px}
+ #legend .lbl:hover,#legend .lbl:focus{border-bottom-color:#3a4a66}
+ #legend .x{margin-left:auto;cursor:pointer;color:#5b6472;font-size:14px;padding:0 4px;user-select:none;opacity:0}
+ #legend .row:hover .x{opacity:1}
+ #legend .x:hover{color:#ff7b72}
+ #legend .restore{color:#4d7fd6;font-size:11px;margin-top:5px;cursor:pointer;pointer-events:auto}
+ #legend .restore:hover{color:#79b0ff}
+ #legend .hint{color:#4b5563;font-size:10px;margin:2px 0 6px}
+ #ctl{position:fixed;top:16px;right:18px;z-index:10;text-align:right}
+ #ctl input[type=text]{background:#0d1117;border:1px solid #30363d;color:#c9d1d9;border-radius:6px;padding:6px 9px;width:180px;outline:none}
+ #ctl input[type=text]:focus{border-color:#1f6feb}
+ #glowbox{margin-top:8px;color:#8b949e;font-size:11px}
+ #glowbox input{vertical-align:middle;width:96px}
+ .dens{margin-top:8px}
+ .dens button{background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:5px;padding:4px 9px;margin-left:4px;cursor:pointer;font-size:11px}
+ .dens button.on{background:#1f6feb;border-color:#1f6feb;color:#fff}
+ #tip{position:fixed;z-index:20;pointer-events:none;background:#0d1117ee;border:1px solid #30363d;border-radius:7px;padding:7px 10px;display:none;max-width:260px;box-shadow:0 4px 20px #000a}
+ #tip b{color:#e6edf3}#tip .t{color:#58a6ff}#tip .th{color:#7ee787;font-size:11px}
+ #count{position:fixed;bottom:12px;left:18px;z-index:10;color:#6e7681;font-size:11px}
+</style></head><body>
+<div id=graph></div>
+<div id=hud>
+ <h1>Tailpipe &mdash; Your Cognitive Graph</h1>
+ <div class=s>your conversations, resolved into entities, edges &amp; themes</div>
+ <div class=hint id=lhint>click a name to rename &middot; hover a row and hit &times; to hide the tag &middot; click a node to lock focus</div>
+ <div id=legend></div>
+</div>
+<div id=ctl>
+ <input id=search type=text placeholder="find an entity&hellip;" autocomplete=off>
+ <div class=dens>
+   density: <button data-w=10>10+</button><button data-w=5>5+</button>
+   <button data-w=3 class=on>3+</button><button data-w=2>2+</button>
+ </div>
+ <div class=dens>depth: <button id=lvl>&#9698; drill into pieces</button></div>
+ <div id=glowbox>glow <input id=glow type=range min=0 max=2.5 step=0.05 value=1.15></div>
+</div>
+<div id=tip></div>
+<div id=count>loading&hellip;</div>
+<script type="importmap">
+{ "imports": {
+  "three": "https://esm.sh/three@0.179.0",
+  "three/": "https://esm.sh/three@0.179.0/"
+}}
+</script>
+<script type="module">
+import ForceGraph3D from "https://esm.sh/3d-force-graph@1.80.0?external=three";
+import { UnrealBloomPass } from "https://esm.sh/three@0.179.0/examples/jsm/postprocessing/UnrealBloomPass.js";
+import SpriteText from "https://esm.sh/three-spritetext@1.9?external=three";
+
+const TOKEN="__TOKEN__";
+const PALETTE=["#4d96ff","#ff5a6a","#ffd93d","#63e6a0","#b892ff","#ff9f45","#31e0d4","#ff5ec4","#4de1ff","#ffa9a9"];
+const el=document.getElementById.bind(document);
+const DIM_N="#0a0d18", DIM_L="#060a14";
+let Graph, bloom, RAW=null, curW=3, depth=0, fitted=false, labelCut=Infinity;
+let hover=null, pinned=null; const hlN=new Set(), hlL=new Set();
+// demo controls: rename + hide theme tags from the legend, remembered per browser.
+// legHidden only affects the upper-left list — the nodes always stay in the graph.
+let legHidden=new Set(JSON.parse(localStorage.getItem("hg_leghidden")||"[]"));
+let overrides=JSON.parse(localStorage.getItem("hg_labels")||"{}");
+const themeLabel=c=> overrides[c.id] ?? ((c.label||"").split(" / ").slice(0,3).join(" / ")||("theme "+c.id));
+
+const baseColor=n=> n.community==null ? "#7b8698" : PALETTE[n.community % PALETTE.length];
+const nColor=n=> hover ? (hlN.has(n.id)?baseColor(n):DIM_N) : baseColor(n);
+const lColor=l=> hover ? (hlL.has(l)?"#9fe8ff":DIM_L)
+                       : ((l.source&&l.source.community!=null)?PALETTE[l.source.community%PALETTE.length]:"#2b466e");
+const pCount=l=> hover ? (hlL.has(l)?4:0) : (depth>0?0:1);  // idle flow in macro; off when exploded (too many)
+const lWidth=l=> (hover&&hlL.has(l)) ? Math.max(1.4,Math.sqrt(l.weight)/2.5)
+                                     : Math.max(0.4,Math.sqrt(l.weight)/4.5);
+
+function applyFocus(node){
+  hover=node||null; hlN.clear(); hlL.clear();
+  if(node){
+    hlN.add(node.id);
+    (window._links||[]).forEach(l=>{
+      const s=l.source.id??l.source, t=l.target.id??l.target;
+      if(s===node.id||t===node.id){ hlL.add(l); hlN.add(s); hlN.add(t); }
+    });
+    showTip(node);
+  } else { el("tip").style.display="none"; }
+  Graph.nodeColor(nColor).linkColor(lColor).linkWidth(lWidth).linkDirectionalParticles(pCount);
+}
+// hover previews only when nothing is pinned; a click locks the focus so it
+// survives the rotation. Click the same node (or the background) to release.
+function setHover(node){ if(!pinned) applyFocus(node); }
+function pin(node){
+  if(pinned && pinned.id===node.id){ pinned=null; applyFocus(null); return; }
+  pinned=node; Graph.controls().autoRotate=false; applyFocus(node);
+  const dist=90, r=Math.hypot(node.x,node.y,node.z)||1;
+  Graph.cameraPosition({x:node.x*(1+dist/r),y:node.y*(1+dist/r),z:node.z*(1+dist/r)},node,1000);
+}
+function clearFocus(){ pinned=null; applyFocus(null); }
+
+function renderLegend(){
+  const present=new Set(RAW.nodes.map(n=>n.community));
+  const box=el("legend"); box.innerHTML="";
+  const comms=RAW.communities.filter(c=>present.has(c.id));
+  comms.filter(c=>!legHidden.has(c.id)).forEach(c=>{
+    const col=PALETTE[c.id%PALETTE.length];
+    const row=document.createElement("div"); row.className="row";
+    const dot=document.createElement("span"); dot.className="dot";
+    dot.style.color=col; dot.style.background=col;
+    const lbl=document.createElement("span"); lbl.className="lbl"; lbl.contentEditable="true";
+    lbl.spellcheck=false; lbl.textContent=themeLabel(c);
+    lbl.addEventListener("keydown",e=>{ if(e.key==="Enter"){e.preventDefault(); lbl.blur();} });
+    lbl.addEventListener("blur",()=>saveLabel(c.id,lbl.textContent.trim()));
+    const x=document.createElement("span"); x.className="x"; x.textContent="\u00d7";
+    x.title="hide this tag from the list (nodes stay)";
+    x.addEventListener("click",()=>{ legHidden.add(c.id);
+      localStorage.setItem("hg_leghidden",JSON.stringify([...legHidden])); renderLegend(); });
+    row.append(dot,lbl,x); box.appendChild(row);
+  });
+  const nHidden=comms.filter(c=>legHidden.has(c.id)).length;
+  if(nHidden){
+    const f=document.createElement("div"); f.className="restore";
+    f.textContent="show "+nHidden+" hidden tag"+(nHidden>1?"s":"");
+    f.addEventListener("click",()=>{ legHidden.clear();
+      localStorage.setItem("hg_leghidden","[]"); renderLegend(); });
+    box.appendChild(f);
+  }
+}
+
+function saveLabel(cid,label){
+  overrides[cid]=label; localStorage.setItem("hg_labels",JSON.stringify(overrides));
+  fetch("/api/graph/rename_community?token="+encodeURIComponent(TOKEN),
+    {method:"POST",headers:{"content-type":"application/json"},
+     body:JSON.stringify({community_id:cid,label})}).catch(()=>{});
+}
+
+function applyView(){   // nodes always fully shown; legHidden only touches the list
+  if(Graph){
+    // weaker repulsion when exploded so the thousands of pieces stay clustered
+    // near their entity instead of blowing apart into a thin scatter
+    Graph.d3Force("charge").strength(depth>=2 ? -14 : depth===1 ? -26 : -170);
+    Graph.linkOpacity(depth>0?0.13:0.32);
+  }
+  Graph.graphData({nodes:RAW.nodes, links:RAW.links});
+  window._nodes=RAW.nodes; window._links=RAW.links;
+  const pieces=RAW.nodes.filter(n=>n.piece).length, ents=RAW.nodes.length-pieces;
+  if(depth>0){
+    const kind=depth>=2?"claims":"mentions";
+    el("count").textContent=ents.toLocaleString()+" entities  ·  "+pieces.toLocaleString()+
+      " pieces shown  ·  of "+(RAW.total_pieces||0).toLocaleString()+" "+kind+" in the graph";
+  } else {
+    const themes=new Set(RAW.nodes.map(n=>n.community));
+    el("count").textContent=ents+" entities  ·  "+RAW.links.length+" connections  ·  "+themes.size+" themes";
+  }
+}
+
+let loadSeq=0;
+async function load(w){
+  const mySeq=++loadSeq;   // drop stale responses if the user clicks again mid-load
+  el("count").textContent=depth>0?"exploding into pieces…":"loading…";
+  const url="/api/graph/full?min_weight="+w+(depth>0?"&depth="+depth:"")+"&token="+encodeURIComponent(TOKEN);
+  const r=await fetch(url);
+  const data=await r.json();
+  if(mySeq!==loadSeq) return;   // a newer load started — this one is stale
+  RAW=data;
+  const maxM=Math.max(1,...RAW.nodes.map(n=>n.mentions||1));
+  RAW.nodes.forEach(n=>{ n.val=1+7*Math.sqrt((n.mentions||1)/maxM); });
+  // always-label the top ~45 hubs so the graph is readable, not just dots
+  const byM=[...RAW.nodes].sort((a,b)=>(b.mentions||0)-(a.mentions||0));
+  labelCut = byM.length>45 ? (byM[44].mentions||0) : 0;
+  if(!Graph){
+    Graph=ForceGraph3D({controlType:"orbit"})(el("graph"))
+      .width(window.innerWidth).height(window.innerHeight)
+      .backgroundColor("#02030a")
+      .showNavInfo(false)
+      .nodeColor(nColor)
+      .nodeVal("val")
+      .nodeOpacity(0.9)
+      .nodeResolution(8)
+      .nodeThreeObjectExtend(true)
+      .nodeThreeObject(n=>{
+        if((n.mentions||0)<labelCut) return null;
+        const s=new SpriteText(n.name);
+        s.color="#dbe6ff"; s.textHeight=Math.min(6,2.8+n.val/4);
+        s.fontWeight="600"; s.material.depthWrite=false; s.material.opacity=0.85;
+        s.position.y=-(n.val+4);
+        return s;
+      })
+      .linkColor(lColor)
+      .linkOpacity(0.32)
+      .linkWidth(lWidth)
+      .linkDirectionalParticles(pCount)
+      .linkDirectionalParticleColor(()=>"#6fd8ff")
+      .linkDirectionalParticleWidth(1.0)
+      .linkDirectionalParticleSpeed(l=>0.004+Math.min(0.01,l.weight/4000))
+      .onNodeHover(setHover)
+      .onNodeClick(pin)
+      .onBackgroundClick(clearFocus)
+      .onEngineStop(()=>{ if(!fitted){fitted=true; Graph.zoomToFit(1400,90);} });
+    Graph.d3Force("charge").strength(-170);
+    Graph.d3Force("link").distance(l=> l.piece ? 7 : (24+40/(l.weight||1)));  // pieces hug their entity
+    Graph.d3VelocityDecay(0.24);                 // keeps a slow living drift
+    // bloom = the glow, but restrained so the core doesn't blow out to white.
+    // threshold means only the brighter nodes bloom; strength driven by the slider.
+    bloom=new UnrealBloomPass();
+    bloom.strength=+el("glow").value; bloom.radius=0.7; bloom.threshold=0.2;
+    Graph.postProcessingComposer().addPass(bloom);
+    const ctr=Graph.controls();
+    ctr.autoRotate=true; ctr.autoRotateSpeed=0.65;   // alive on load, stops when grabbed
+    el("graph").addEventListener("pointerdown",()=>{ ctr.autoRotate=false; });
+  }
+  fitted=false; pinned=null; hover=null; hlN.clear(); hlL.clear();
+  renderLegend();
+  applyView();
+}
+
+el("glow").addEventListener("input",e=>{ if(bloom) bloom.strength=+e.target.value; });
+
+// keep the canvas locked to the viewport (fixes fullscreen / window-resize dead space)
+addEventListener("resize",()=>{ if(Graph) Graph.width(window.innerWidth).height(window.innerHeight); });
+
+el("lvl").addEventListener("click",()=>{
+  depth=(depth+1)%3;   // macro -> mentions -> +claims -> macro
+  el("lvl").innerHTML = depth===0 ? "&#9698; drill into pieces"
+                      : depth===1 ? "&#9698; go deeper: claims"
+                      : "&#9650; back to macro";
+  el("lvl").classList.toggle("on", depth>0);
+  load(curW);
+});
+
+function showTip(n){
+  const t=el("tip");
+  if(!n){t.style.display="none";return;}
+  t.innerHTML="<b>"+n.name+"</b> <span class=t>"+n.type+"</span><br>"+
+    "<span class=th>"+(n.theme? n.theme.split(" / ").slice(0,3).join(" / "):"")+"</span><br>"+
+    (n.mentions||0)+" mentions";
+  t.style.display="block";
+}
+addEventListener("mousemove",e=>{const t=el("tip");if(t.style.display==="block"){t.style.left=(e.clientX+14)+"px";t.style.top=(e.clientY+14)+"px";}});
+
+el("search").addEventListener("keydown",e=>{
+  if(e.key!=="Enter")return;
+  const q=e.target.value.trim().toLowerCase();
+  const hit=(window._nodes||[]).filter(n=>n.name.toLowerCase().includes(q))
+    .sort((a,b)=>(b.mentions||0)-(a.mentions||0))[0];
+  if(hit) pin(hit);   // search pins the match so it stays lit
+});
+
+document.querySelectorAll(".dens button[data-w]").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll(".dens button[data-w]").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on"); curW=+b.dataset.w; load(curW);
+}));
+
+load(curW);
+</script></body></html>
