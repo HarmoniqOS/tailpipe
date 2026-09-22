@@ -1,0 +1,8 @@
+# Client-side tools: normalizers, extraction worker, graph pipeline, watcher.
+# The memory-core container has its own deps (core/requirements.txt); the
+# Claude Code watcher has its own (scrapers/requirements.txt).
+#   pip install -r requirements.txt
+requests>=2.31        # all client -> core HTTP
+numpy>=1.26           # graph: split-assignment vectors
+networkx>=3.2         # graph: community detection (Louvain)
+fastembed>=0.3        # graph: context embeddings for entity split resolution

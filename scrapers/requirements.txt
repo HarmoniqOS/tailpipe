@@ -1,0 +1,5 @@
+# Both optional — the watcher runs on the standard library alone.
+#   requests : nicer HTTP client (falls back to urllib if absent)
+#   watchdog : filesystem-event fast path (falls back to polling if absent)
+requests>=2.28
+watchdog>=3.0

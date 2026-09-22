@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: system-ui, sans-serif; width: 320px; margin: 0; padding: 14px; background: #1a1d1a; color: #e8e6e0; }
+  h1 { font-size: 15px; margin: 0 0 10px; color: #8fbc8f; }
+  .row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+  .muted { color: #999; }
+  .err { color: #e07a5f; }
+  .ok { color: #8fbc8f; }
+  button { background: #4a7c59; color: white; border: none; border-radius: 6px; padding: 8px 12px; font-size: 13px; cursor: pointer; margin: 8px 6px 0 0; }
+  button:hover { background: #5a8c69; }
+  button.secondary { background: #333; }
+  #log { font-size: 12px; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <h1>Tailpipe Collector</h1>
+  <div class="row"><span>Captured conversations</span><span id="total">–</span></div>
+  <div class="row"><span>Queued for delivery</span><span id="queued">–</span></div>
+  <div id="log"></div>
+  <button id="sync">Sync now</button>
+  <button id="export" class="secondary">Export NDJSON</button>
+  <button id="options" class="secondary">Settings</button>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

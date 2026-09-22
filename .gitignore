@@ -1,0 +1,56 @@
+# ── secrets (never, ever) ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*token*
+*secret*
+*credentials*
+
+# ── your data / your memory (this is personal — it stays local) ───────────────
+data/
+raw/
+memory-core/
+*.db
+*.sqlite
+*.sqlite3
+*.ndjson
+exports/
+captures/
+conversations/
+resolution_work/       # graph entity-resolution scratch — holds conversation excerpts
+cc_cursors.json        # Claude Code watcher cursor state
+.tailpipe/             # local watcher/tool state dir
+
+# ── models / large artifacts ──────────────────────────────────────────────────
+models/
+*.gguf
+*.safetensors
+*.bin
+*.onnx
+*.wav
+*.mp3
+*.m4a
+
+# ── python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# ── node / extension build ────────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+*.log
+
+# ── os / editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

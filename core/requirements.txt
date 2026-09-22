@@ -1,0 +1,5 @@
+starlette>=0.37
+uvicorn>=0.30
+mcp>=1.2,<2
+fastembed>=0.3
+sqlite-vec>=0.1.6

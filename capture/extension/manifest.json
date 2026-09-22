@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Tailpipe Collector",
+  "version": "0.1.0",
+  "description": "Syncs your AI conversations (Claude.ai, ChatGPT) into your personal Tailpipe memory core. All data stays on your network.",
+  "permissions": ["storage", "unlimitedStorage", "alarms"],
+  "host_permissions": [
+    "https://claude.ai/*",
+    "https://chatgpt.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Tailpipe Collector"
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "minimum_chrome_version": "116"
+}

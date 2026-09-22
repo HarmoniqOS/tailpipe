@@ -1,0 +1,21 @@
+# Tailpipe Memory Core.
+# Setup:  cp .env.example .env  (fill it in)  then  docker compose up -d --build
+services:
+  tailpipe-core:
+    build: ./core
+    container_name: tailpipe-core
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    volumes:
+      # Your memory lives here (gitignored). Point it at fast storage for the
+      # index. You can split the index and the raw archive across two mounts
+      # for performance — see docs/SETUP.md.
+      - ./data:/data
+    environment:
+      - DATA_DIR=/data
+      - PORT=${PORT:-8080}
+      - INGEST_TOKEN=${INGEST_TOKEN:?set INGEST_TOKEN in .env}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - EXCLUDED_OWNERS=${EXCLUDED_OWNERS:-}
+      - EMBED_MODEL=${EMBED_MODEL:-BAAI/bge-small-en-v1.5}
