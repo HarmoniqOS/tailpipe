@@ -103,7 +103,7 @@ python graph/communities.py               # detect themes (Louvain)
 - **Claude Desktop / other MCP clients:** add an HTTP MCP server pointing at that
   URL with the same `Authorization` header.
 
-Tools you get: `search_memory`, `get_conversation`, `entity_timeline`,
+Tools you get: `search_memory`, `get_conversation`, `get_message`, `entity_timeline`,
 `entity_neighborhood`, `what_connects`, `list_themes`, `theme_of`, `memory_status`.
 Then just ask: *"what did I decide about X?"*, *"what connects A and B?"*
 

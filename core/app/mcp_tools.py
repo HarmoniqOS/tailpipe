@@ -75,11 +75,18 @@ def search_memory(query: str, source: str = "", after: str = "", before: str = "
     return "\n\n".join(out) if out else "No matches."
 
 
+MSG_CAP = 8000          # per-message cap in get_conversation (full text via get_message)
+CONV_BUDGET = 60000     # total characters one get_conversation call returns
+PART_CHARS = 40000      # get_message page size for very long messages
+
+
 @mcp.tool()
 def get_conversation(ref: str, window: int = 6) -> str:
-    """Read full message context. ref = 'source:conversation_id' (whole active
-    path, newest last) or 'source:conversation_id#message_id' (window of
-    messages around that hit)."""
+    """Read conversation context. Prefer ref = 'source:conversation_id#message_id'
+    (straight from search results): returns a window of messages around that hit.
+    A bare 'source:conversation_id' returns the active path from the start, up to
+    ~60,000 characters. Each message shows its own ref; messages over 8,000
+    characters are marked TRUNCATED — call get_message(ref) for the complete text."""
     conv_key, _, msg_id = ref.partition("#")
     conn = db()
     try:
@@ -101,11 +108,55 @@ def get_conversation(ref: str, window: int = 6) -> str:
             lo = max(0, idx - window)
             rows = rows[lo: idx + window + 1]
 
-    header = f"{conv['title'] or '(untitled)'} [{conv['source']}] — {len(rows)} messages shown"
-    body = "\n\n".join(
-        f"{r['role'].upper()} ({r['created_at'] or '?'}):\n{(r['text'] or '')[:2000]}" for r in rows
-    )
-    return f"{header}\n\n{body}"
+    parts, used = [], 0
+    for n, r in enumerate(rows):
+        text = r["text"] or ""
+        mref = f"{conv_key}#{r['native_id']}"
+        note = ""
+        if len(text) > MSG_CAP:
+            note = f"\n[TRUNCATED at {MSG_CAP:,} of {len(text):,} chars — full text: get_message(\"{mref}\")]"
+            text = text[:MSG_CAP]
+        block = f"{r['role'].upper()} ({r['created_at'] or '?'})  ref: {mref}\n{text}{note}"
+        if parts and used + len(block) > CONV_BUDGET:
+            parts.append(f"[... {len(rows) - n} more messages not shown — read a later part with "
+                         f"get_conversation(\"{conv_key}#<message_id>\") using a ref from search_memory]")
+            break
+        parts.append(block)
+        used += len(block)
+    header = f"{conv['title'] or '(untitled)'} [{conv['source']}] — {len(rows)} messages in range"
+    return header + "\n\n" + "\n\n".join(parts)
+
+
+@mcp.tool()
+def get_message(ref: str, part: int = 1) -> str:
+    """The complete, untruncated text of ONE message. ref = 'source:conversation_id#message_id'
+    (shown next to every message in get_conversation and in search results). Very long
+    messages come in parts of 40,000 characters: part=1, 2, ..."""
+    conv_key, _, msg_id = ref.partition("#")
+    if not msg_id:
+        return "get_message needs a single-message ref: 'source:conversation_id#message_id'."
+    conn = db()
+    try:
+        conv = conn.execute("SELECT title, source, owner FROM conversations WHERE key=?", (conv_key,)).fetchone()
+        if not conv:
+            return f"Not found: {conv_key}"
+        if conv["owner"] in EXCLUDED_OWNERS:
+            return "This conversation is excluded from retrieval."
+        row = conn.execute("SELECT role, created_at, text FROM messages WHERE conv_key=? AND native_id=?",
+                           (conv_key, msg_id)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return f"Message not found: {ref}"
+    text = row["text"] or ""
+    n_parts = max(1, -(-len(text) // PART_CHARS))
+    part = max(1, min(part, n_parts))
+    chunk = text[(part - 1) * PART_CHARS: part * PART_CHARS]
+    head = (f"{conv['title'] or '(untitled)'} [{conv['source']}] — {row['role'].upper()} "
+            f"({row['created_at'] or '?'}) — {len(text):,} chars"
+            + (f", part {part} of {n_parts}" if n_parts > 1 else ""))
+    tail = f"\n[continued — get_message(\"{ref}\", part={part + 1})]" if part < n_parts else ""
+    return f"{head}\n\n{chunk}{tail}"
 
 
 @mcp.tool()

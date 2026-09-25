@@ -26,7 +26,7 @@ A single container (Starlette + FastMCP, SQLite + `sqlite-vec` + FTS5). It:
   NDJSON, canonical, kept forever) and indexes them for **hybrid search** (keyword
   FTS + local vector embeddings).
 - Serves an **MCP server** (streamable HTTP) so any agent can query your memory:
-  `search_memory`, `get_conversation`, `entity_timeline`, `entity_neighborhood`,
+  `search_memory`, `get_conversation`, `get_message`, `entity_timeline`, `entity_neighborhood`,
   `what_connects`, `list_themes`, `theme_of`, `memory_status`.
 - Hosts the **knowledge-graph API** and an interactive **3D graph visualization**.
 - Guards everything behind a bearer token; a privacy partition (`EXCLUDED_OWNERS`,
